@@ -28,13 +28,15 @@ impl Miner {
         self.check_num_cores(args.threads);
         // Start mining loop
         let mut last_balance = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await.balance;
+        let mut last_diffcult = 0u32;
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
             println!(
-                "\nStake balance: {} ORE, diff: {} ORE",
+                "\nStake balance: {} ORE, diff: {} ORE gas: {} sol",
                 amount_u64_to_string(proof.balance),
-                amount_u64_to_string(proof.balance - last_balance)
+                amount_u64_to_string(proof.balance - last_balance),
+                (self.adjust_fee(last_diffcult) as f64 + 5000.0)/ 1_000_000_000.0,
             );
 
             last_balance = proof.balance;
@@ -51,7 +53,7 @@ impl Miner {
                 config.min_difficulty as u32,
             )
                 .await;
-
+            last_diffcult = difficulty.clone();
             // Submit most difficult hash
             let mut compute_budget = 500_000;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
