@@ -1,10 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use colored::*;
-use drillx::{
-    equix::{self},
-    Hash, Solution,
-};
+use drillx::{difficulty, equix::{self}, Hash, Solution};
 use ore_api::{
     consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Config, Proof},
@@ -29,28 +26,31 @@ impl Miner {
 
         // Check num threads
         self.check_num_cores(args.threads);
-
         // Start mining loop
+        let mut last_balance = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await.balance;
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
             println!(
-                "\nStake balance: {} ORE",
-                amount_u64_to_string(proof.balance)
+                "\nStake balance: {} ORE, diff: {} ORE",
+                amount_u64_to_string(proof.balance),
+                amount_u64_to_string(proof.balance - last_balance)
             );
+
+            last_balance = proof.balance;
 
             // Calc cutoff time
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
 
             // Run drillx
             let config = get_config(&self.rpc_client).await;
-            let solution = Self::find_hash_par(
+            let (solution, difficulty) = Self::find_hash_par(
                 proof,
                 cutoff_time,
                 args.threads,
                 config.min_difficulty as u32,
             )
-            .await;
+                .await;
 
             // Submit most difficult hash
             let mut compute_budget = 500_000;
@@ -65,9 +65,8 @@ impl Miner {
                 find_bus(),
                 solution,
             ));
-            self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
-                .await
-                .ok();
+            self.send_and_confirm_jito(&ixs, ComputeBudget::Fixed(compute_budget), false, difficulty)
+                .await.ok();
         }
     }
 
@@ -76,10 +75,11 @@ impl Miner {
         cutoff_time: u64,
         threads: u64,
         min_difficulty: u32,
-    ) -> Solution {
+    ) -> (Solution, u32) {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
+        println!("params: cut time: {:#?}, thread: {:#?}, min_difficulty: {:#?}", cutoff_time, threads, min_difficulty);
         let handles: Vec<_> = (0..threads)
             .map(|i| {
                 std::thread::spawn({
@@ -154,7 +154,7 @@ impl Miner {
             best_difficulty
         ));
 
-        Solution::new(best_hash.d, best_nonce.to_le_bytes())
+        (Solution::new(best_hash.d, best_nonce.to_le_bytes()), best_difficulty)
     }
 
     pub fn check_num_cores(&self, threads: u64) {

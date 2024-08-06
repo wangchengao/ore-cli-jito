@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use colored::*;
+use drillx::difficulty;
+use rand::Rng;
 use solana_client::{
     client_error::{ClientError, ClientErrorKind, Result as ClientResult},
     rpc_config::RpcSendTransactionConfig,
@@ -15,8 +17,18 @@ use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
     signature::{Signature, Signer},
     transaction::Transaction,
+    pubkey,
 };
-use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
+use solana_transaction_status::{Encodable, EncodedTransaction, TransactionConfirmationStatus, UiTransactionEncoding};
+use solana_program::pubkey::Pubkey;
+
+use serde::{Deserialize, Serialize};
+
+use serde_json::{json, Value};
+use eyre::{Report, Result};
+use futures::future::ok;
+use reqwest;
+use reqwest::header::{HeaderMap, CONTENT_TYPE};
 
 use crate::Miner;
 
@@ -24,7 +36,7 @@ const MIN_SOL_BALANCE: f64 = 0.005;
 
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
-const GATEWAY_RETRIES: usize = 150;
+const GATEWAY_RETRIES: usize = 30;
 const CONFIRM_RETRIES: usize = 1;
 
 const CONFIRM_DELAY: u64 = 0;
@@ -33,6 +45,124 @@ const GATEWAY_DELAY: u64 = 300;
 pub enum ComputeBudget {
     Dynamic,
     Fixed(u32),
+}
+
+pub const JITO_RECIPIENTS: [Pubkey; 8] = [
+    // mainnet
+    pubkey!("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5"),
+    pubkey!("HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe"),
+    pubkey!("Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY"),
+    pubkey!("ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49"),
+    pubkey!("DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh"),
+    pubkey!("ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt"),
+    pubkey!("DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL"),
+    pubkey!("3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"),
+];
+
+
+// jito submit
+#[derive(Deserialize, Serialize, Debug)]
+struct BundleSendResponse {
+    id: u64,
+    jsonrpc: String,
+    result: String,
+}
+
+// jito query
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BundleStatusResponse {
+    jsonrpc: String,
+    result: BundleStatusResult,
+    id: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BundleStatusResult {
+    context: Context,
+    value: Vec<BundleStatus>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Context {
+    slot: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BundleStatus {
+    bundle_id: String,
+    transactions: Vec<String>,
+    slot: u64,
+    confirmation_status: String,
+    err: Option<serde_json::Value>,
+}
+
+async fn get_bundle_statuses(params: Value) -> Result<BundleStatusResponse> {
+    let client = reqwest::Client::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    let response = client
+        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .headers(headers)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getBundleStatuses",
+            "params": params
+        }))
+        .send()
+        .await
+        .map_err(|err| eyre::eyre!("Failed to send request: {err}"))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|err| eyre::eyre!("Failed to read response content: {err:#}"))?;
+
+    if !status.is_success() {
+        eyre::bail!("Status code: {status}, response: {text}");
+    }
+
+    return serde_json::from_str(&text)
+        .map_err(|err| eyre::eyre!("Failed to deserialize response: {err:#}, response: {text}, status: {status}"));
+}
+
+
+async fn send_jito_bundle(params: Value) -> Result<BundleSendResponse> {
+    let client = reqwest::Client::new();
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+
+    let response = client
+        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .headers(headers)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendBundle",
+            "params": params
+        }))
+        .send()
+        .await
+        .map_err(|err| eyre::eyre!("Failed to send request: {err}"))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|err| eyre::eyre!("Failed to read response content: {err:#}"))?;
+
+    if !status.is_success() {
+        eyre::bail!("Status code: {status}, response: {text}");
+    }
+
+    return serde_json::from_str(&text)
+        .map_err(|err| eyre::eyre!("Failed to deserialize response: {err:#}, response: {text}, status: {status}"));
+}
+
+pub fn build_bribe_ix(pubkey: &Pubkey, value: u64) -> solana_sdk::instruction::Instruction {
+    solana_sdk::system_instruction::transfer(pubkey, &JITO_RECIPIENTS[rand::thread_rng().gen_range(0..JITO_RECIPIENTS.len())], value)
 }
 
 impl Miner {
@@ -229,5 +359,146 @@ impl Miner {
         //         });
         //     }
         // }
+    }
+
+    pub async fn send_and_confirm_jito(
+        &self,
+        ixs: &[Instruction],
+        compute_budget: ComputeBudget,
+        skip_confirm: bool,
+        difficult: u32,
+    ) -> Result<Value> {
+        let progress_bar = spinner::new_progress_bar();
+        let signer = self.signer();
+        let client = self.rpc_client.clone();
+
+        // Return error, if balance is zero
+        if let Ok(balance) = client.get_balance(&signer.pubkey()).await {
+            if balance <= sol_to_lamports(MIN_SOL_BALANCE) {
+                panic!(
+                    "{} Insufficient balance: {} SOL\nPlease top up with at least {} SOL",
+                    "ERROR".bold().red(),
+                    lamports_to_sol(balance),
+                    MIN_SOL_BALANCE
+                );
+            }
+        }
+
+        // Set compute units
+        let mut final_ixs = vec![];
+        match compute_budget {
+            ComputeBudget::Dynamic => {
+                // TODO simulate
+                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
+            }
+            ComputeBudget::Fixed(cus) => {
+                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
+            }
+        }
+        final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
+            0,
+        ));
+        final_ixs.extend_from_slice(ixs);
+
+        let mut extra_fee = self.priority_fee.clone();
+        if difficult > 20 {
+            extra_fee += (extra_fee as f64 * (difficult as f64 - 20f64) / 20f64) as u64 * 2;
+            // 约束下上限
+            if extra_fee > 3 * self.priority_fee {
+                extra_fee = 3 * self.priority_fee
+            }
+            println!("change extra fee to {}", extra_fee)
+        }
+
+        final_ixs.push(build_bribe_ix(&signer.pubkey(), extra_fee));
+
+        // Build tx
+        let send_cfg = RpcSendTransactionConfig {
+            skip_preflight: true,
+            preflight_commitment: Some(CommitmentLevel::Confirmed),
+            encoding: Some(UiTransactionEncoding::Base64),
+            max_retries: Some(RPC_RETRIES),
+            min_context_slot: None,
+        };
+        let mut tx = Transaction::new_with_payer(&final_ixs, Some(&signer.pubkey()));
+
+        // Sign tx
+        let (hash, _slot) = client
+            .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
+            .await
+            .unwrap();
+        tx.sign(&[&signer], hash);
+
+
+        let mut bundle = Vec::with_capacity(5);
+        bundle.push(tx);
+
+        let signature = *bundle
+            .first()
+            .expect("empty bundle")
+            .signatures
+            .first()
+            .expect("empty transaction");
+
+        let bundle = bundle
+            .into_iter()
+            .map(|tx| match tx.encode(UiTransactionEncoding::Binary) {
+                EncodedTransaction::LegacyBinary(b) => b,
+                _ => panic!("encode-jito-tx-err"),
+            })
+            .collect::<Vec<_>>();
+
+
+        let mut attempts = 0;
+        let mut bundle_id = String::new();
+        ;
+        progress_bar.set_message(format!("Submitting jito transaction... (attempt {})", attempts));
+        match send_jito_bundle(json!([bundle])).await {
+            Ok(sig) => {
+                bundle_id = sig.result.clone();
+                progress_bar.finish_with_message(format!("Sent: {:?}", sig));
+            }
+            // Handle submit errors
+            Err(err) => {
+                progress_bar.set_message(format!(
+                    "{}: {}",
+                    "ERROR".bold().red(),
+                    err.to_string()
+                ));
+                return Err(Report::from(ClientError {
+                    request: None,
+                    kind: ClientErrorKind::Custom("submit bundle err".into()),
+                }));
+            }
+        }
+
+        loop {
+            println!("query bundle bundle_id: {}, attempts: {}", bundle_id, attempts);
+
+            // Retry
+            let param = bundle_id.clone();
+            match get_bundle_statuses(json!([[param]])).await {
+                Ok(resp) => {
+                    if resp.result.value.len() > 0 && resp.result.value[0].confirmation_status == "confirmed" {
+                        println!(" Bundle landed successfully");
+                        println!(" https://solscan.io/tx/{}?cluster={}", resp.result.value[0].transactions[0], "mainnet");
+                        return Ok(Value::from(()));
+                    }
+                }
+                // Handle submit errors
+                Err(err) => {
+                    println!("{}", err);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(2000));
+            attempts += 1;
+            if attempts > GATEWAY_RETRIES {
+                progress_bar.finish_with_message(format!("{}: Max retries", "ERROR".bold().red()));
+                return Err(Report::from(ClientError {
+                    request: None,
+                    kind: ClientErrorKind::Custom("Max retries".into()),
+                }));
+            }
+        }
     }
 }

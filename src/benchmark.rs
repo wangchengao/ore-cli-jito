@@ -25,9 +25,10 @@ impl Miner {
                         let timer = Instant::now();
                         let first_nonce = u64::MAX.saturating_div(args.threads).saturating_mul(i);
                         let mut nonce = first_nonce;
+                        let c= challenge.clone();
                         loop {
                             // Create hash
-                            let _hx = drillx::hash(&challenge, &nonce.to_le_bytes());
+                            let _hx = drillx::hash(&c, &nonce.to_le_bytes());
 
                             // Increment nonce
                             nonce += 1;
