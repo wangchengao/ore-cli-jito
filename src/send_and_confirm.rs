@@ -395,9 +395,6 @@ impl Miner {
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
             }
         }
-        final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
-            0,
-        ));
         final_ixs.extend_from_slice(ixs);
 
         let mut extra_fee = self.priority_fee.clone();
