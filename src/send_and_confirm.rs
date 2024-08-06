@@ -402,7 +402,7 @@ impl Miner {
 
         let mut extra_fee = self.priority_fee.clone();
         if difficult > 20 {
-            extra_fee += (extra_fee as f64 * (difficult as f64 - 20f64) / 20f64) as u64 * 2;
+            extra_fee += (extra_fee as f64 * (difficult as f64 - 20f64) / 20f64) as u64 * 4;
             // 约束下上限
             if extra_fee > 3 * self.priority_fee {
                 extra_fee = 3 * self.priority_fee
