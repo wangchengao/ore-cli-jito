@@ -1,5 +1,4 @@
 use std::{sync::Arc, time::Instant};
-
 use solana_rpc_client::spinner;
 
 use crate::{args::BenchmarkArgs, Miner};
@@ -8,6 +7,7 @@ const TEST_DURATION: i64 = 30;
 
 impl Miner {
     pub async fn benchmark(&self, args: BenchmarkArgs) {
+
         // Check num threads
         self.check_num_cores(args.threads);
 
@@ -59,5 +59,6 @@ impl Miner {
             "Hashpower: {} H/sec",
             total_nonces.saturating_div(TEST_DURATION as u64),
         ));
+
     }
 }
