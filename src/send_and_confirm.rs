@@ -1,3 +1,4 @@
+use std::thread::sleep;
 use std::time::Duration;
 
 use colored::*;
@@ -368,7 +369,7 @@ impl Miner {
         compute_budget: ComputeBudget,
         skip_confirm: bool,
         difficult: u32,
-    ) -> Result<Value> {
+    ) -> (Result<Value> ){
         let progress_bar = spinner::new_progress_bar();
         let signer = self.signer();
         let client = self.rpc_client.clone();
@@ -401,15 +402,7 @@ impl Miner {
         ));
 
 
-        let mut extra_fee = self.priority_fee.clone();
-        if difficult > 20 {
-            extra_fee += (extra_fee as f64 * (difficult as f64 - 20f64) / 20f64) as u64 * 4;
-            // 约束下上限
-            if extra_fee > 3 * self.priority_fee {
-                extra_fee = 3 * self.priority_fee
-            }
-            println!("change extra fee to {}", extra_fee)
-        }
+        let extra_fee = self.adjust_fee(difficult);
 
         final_ixs.push(build_bribe_ix(&signer.pubkey(), extra_fee));
 
@@ -526,6 +519,19 @@ impl Miner {
         )];
 
         Instruction::new_with_bytes(program_id, &data, account_metas)
+    }
+
+    pub fn adjust_fee(&self, difficult: u32) -> u64 {
+        let mut extra_fee = self.priority_fee.clone();
+        if difficult > 20 {
+            extra_fee += (extra_fee as f64 * (difficult as f64 - 20f64) / 20f64) as u64 * 4;
+            // 约束下上限
+            if extra_fee > 3 * self.priority_fee {
+                extra_fee = 3 * self.priority_fee
+            }
+            println!("change extra fee to {}", extra_fee)
+        }
+        return extra_fee
     }
 }
 
