@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use colored::*;
-use drillx::{difficulty, equix::{self}, Hash, Solution};
+use drillx::{equix::{self}, Hash, Solution};
 use ore_api::{
     consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Config, Proof},
@@ -14,7 +14,7 @@ use solana_sdk::signer::Signer;
 use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
-    utils::{amount_u64_to_string, get_clock, get_config, get_proof_with_authority, proof_pubkey},
+    utils::{amount_u64_to_string, amount_u64_to_f64, get_clock, get_config, get_proof_with_authority, proof_pubkey},
     Miner,
 };
 
@@ -27,16 +27,25 @@ impl Miner {
         // Check num threads
         self.check_num_cores(args.threads);
         // Start mining loop
+        let mut sum_ore = 0f64;
+        let mut sum_gas = 0f64;
+
         let mut last_balance = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await.balance;
-        let mut last_diffcult = 0u32;
+        let mut last_difficult = 0u32;
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
+
+            sum_ore += amount_u64_to_f64(proof.balance - last_balance);
+            sum_gas += (self.adjust_fee(last_difficult) as f64 + 5000.0) / 1_000_000_000.0;
+
             println!(
-                "\nStake balance: {} ORE, diff: {} ORE gas: {} sol",
+                "\nStake balance: {} ORE, diff: {} ORE gas: {} sol \nsum balance {} ORE, gas: {} sol",
                 amount_u64_to_string(proof.balance),
                 amount_u64_to_string(proof.balance - last_balance),
-                (self.adjust_fee(last_diffcult) as f64 + 5000.0)/ 1_000_000_000.0,
+                (self.adjust_fee(last_difficult) as f64 + 5000.0) / 1_000_000_000.0,
+                sum_ore,
+                sum_gas,
             );
 
             last_balance = proof.balance;
@@ -53,7 +62,7 @@ impl Miner {
                 config.min_difficulty as u32,
             )
                 .await;
-            last_diffcult = difficulty.clone();
+            last_difficult = difficulty.clone();
             // Submit most difficult hash
             let mut compute_budget = 500_000;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];

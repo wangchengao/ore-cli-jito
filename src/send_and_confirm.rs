@@ -1,4 +1,3 @@
-use std::thread::sleep;
 use std::time::Duration;
 
 use colored::*;
@@ -61,6 +60,14 @@ pub const JITO_RECIPIENTS: [Pubkey; 8] = [
     pubkey!("3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"),
 ];
 
+pub const JITO_ENDPOINTS: [&str; 5] = [
+    "https://mainnet.block-engine.jito.wtf",
+    "https://amsterdam.mainnet.block-engine.jito.wtf",
+    "https://frankfurt.mainnet.block-engine.jito.wtf",
+    "https://ny.mainnet.block-engine.jito.wtf",
+    "https://tokyo.mainnet.block-engine.jito.wtf",
+];
+
 
 // jito submit
 #[derive(Deserialize, Serialize, Debug)]
@@ -103,8 +110,9 @@ async fn get_bundle_statuses(params: Value) -> Result<BundleStatusResponse> {
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+
     let response = client
-        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .post(JITO_ENDPOINTS[rand::thread_rng().gen_range(0..JITO_ENDPOINTS.len())].to_string() + "/api/v1/bundles")
         .headers(headers)
         .json(&json!({
             "jsonrpc": "2.0",
@@ -137,7 +145,7 @@ async fn send_jito_bundle(params: Value) -> Result<BundleSendResponse> {
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
     let response = client
-        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .post(JITO_ENDPOINTS[rand::thread_rng().gen_range(0..JITO_ENDPOINTS.len())].to_string() + "/api/v1/bundles")
         .headers(headers)
         .json(&json!({
             "jsonrpc": "2.0",
@@ -369,7 +377,7 @@ impl Miner {
         compute_budget: ComputeBudget,
         skip_confirm: bool,
         difficult: u32,
-    ) -> (Result<Value> ){
+    ) -> (Result<Value> ) {
         let progress_bar = spinner::new_progress_bar();
         let signer = self.signer();
         let client = self.rpc_client.clone();
@@ -388,46 +396,23 @@ impl Miner {
 
         // Set compute units
         let mut final_ixs = vec![];
-        match compute_budget {
-            ComputeBudget::Dynamic => {
-                // TODO simulate
-                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
-            }
-            ComputeBudget::Fixed(cus) => {
-                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
-            }
-        }
+        // match compute_budget {
+        //     ComputeBudget::Dynamic => {
+        //         // TODO simulate
+        //         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
+        //     }
+        //     ComputeBudget::Fixed(cus) => {
+        //         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
+        //     }
+        // }
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             0,
         ));
 
-
-        let extra_fee = self.adjust_fee(difficult);
-
-        final_ixs.push(build_bribe_ix(&signer.pubkey(), extra_fee));
-
-        let mut rng = rand::thread_rng();
-        let random_value = rng.gen::<f64>(); // 生成一个随机的 f64 类型浮点数
-
-        // 格式化字符串，与 Go 中的 fmt.Sprintf 类似
-        let memo_data = format!("plopl666:{:.9}", random_value);
-
-        // 创建一个指令
-        let memo_ix = self.create_memo_instruction(&memo_data);
-        final_ixs.push(memo_ix);
-
-
+        final_ixs.push(build_bribe_ix(&signer.pubkey(), self.adjust_fee(difficult)));
 
         final_ixs.extend_from_slice(ixs);
 
-        // Build tx
-        let send_cfg = RpcSendTransactionConfig {
-            skip_preflight: true,
-            preflight_commitment: Some(CommitmentLevel::Confirmed),
-            encoding: Some(UiTransactionEncoding::Base64),
-            max_retries: Some(RPC_RETRIES),
-            min_context_slot: None,
-        };
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&signer.pubkey()));
 
         // Sign tx
@@ -510,17 +495,6 @@ impl Miner {
         }
     }
 
-    pub fn create_memo_instruction(&self, memo_data: &str) -> Instruction {
-        let program_id =pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"); // 替换为实际的 Memo 程序 ID
-        let data = memo_data.as_bytes().to_vec();  // 将字符串转换为字节向量
-        let account_metas = vec![AccountMeta::new_readonly(
-            self.signer().pubkey(), // 替换为合适的账户 pubkey
-            false,
-        )];
-
-        Instruction::new_with_bytes(program_id, &data, account_metas)
-    }
-
     pub fn adjust_fee(&self, difficult: u32) -> u64 {
         let mut extra_fee = self.priority_fee.clone();
         if difficult > 20 {
@@ -531,7 +505,7 @@ impl Miner {
             }
             println!("change extra fee to {}", extra_fee)
         }
-        return extra_fee
+        return extra_fee;
     }
 }
 
