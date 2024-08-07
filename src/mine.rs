@@ -31,21 +31,33 @@ impl Miner {
         let mut sum_gas = 0f64;
 
         let mut last_balance = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await.balance;
-        let mut last_difficult = 0u32;
+        let mut last_gas = 0f64;
+
         loop {
             // Fetch proof
             let proof = get_proof_with_authority(&self.rpc_client, signer.pubkey()).await;
 
+            let mut sum_rate = 0.0;
             sum_ore += amount_u64_to_f64(proof.balance - last_balance);
-            sum_gas += (self.adjust_fee(last_difficult) as f64 + 5000.0) / 1_000_000_000.0;
+            sum_gas += last_gas;
+            if sum_gas != 0.0 {
+                sum_rate = sum_ore / sum_gas
+            }
+
+            let mut rate = 0.0;
+            if last_gas != 0.0 {
+                rate = ((proof.balance - last_balance) as f64) / 1_000_000_000_00.0 / last_gas;
+            }
 
             println!(
-                "\nStake balance: {} ORE, diff: {} ORE gas: {} sol \nsum balance {} ORE, gas: {} sol",
+                "\nStake balance: {:.8} ORE, diff: {:.8} ORE gas: {:.8} sol rate: {:.2} ore/sol\nSum balance {:.8} ORE, gas: {:.8} sol sum rate: {:.2} ore/sol",
                 amount_u64_to_string(proof.balance),
                 amount_u64_to_string(proof.balance - last_balance),
-                (self.adjust_fee(last_difficult) as f64 + 5000.0) / 1_000_000_000.0,
+                last_gas,
+                rate,
                 sum_ore,
                 sum_gas,
+                sum_rate,
             );
 
             last_balance = proof.balance;
@@ -62,7 +74,7 @@ impl Miner {
                 config.min_difficulty as u32,
             )
                 .await;
-            last_difficult = difficulty.clone();
+            let last_difficult = difficulty.clone();
             // Submit most difficult hash
             let mut compute_budget = 500_000;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
@@ -76,8 +88,11 @@ impl Miner {
                 find_bus(),
                 solution,
             ));
-            self.send_and_confirm_jito(&ixs, ComputeBudget::Fixed(compute_budget), false, difficulty)
-                .await.ok();
+            if let Ok(_) = self.send_and_confirm_jito(&ixs, ComputeBudget::Fixed(compute_budget), false, difficulty).await {
+                last_gas = (self.adjust_fee(last_difficult) as f64 + 5000.0) / 1_000_000_000.0;
+            } else {
+                last_gas = 0.0
+            }
         }
     }
 
