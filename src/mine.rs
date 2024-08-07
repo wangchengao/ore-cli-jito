@@ -40,17 +40,17 @@ impl Miner {
             let mut sum_rate = 0.0;
             sum_ore += amount_u64_to_f64(proof.balance - last_balance);
             sum_gas += last_gas;
-            if sum_gas != 0.0 {
-                sum_rate = sum_ore / sum_gas
+            if sum_ore != 0.0 {
+                sum_rate = sum_gas / sum_ore
             }
 
             let mut rate = 0.0;
-            if last_gas != 0.0 {
-                rate = ((proof.balance - last_balance) as f64) / 1_000_000_000_00.0 / last_gas;
+            if ((proof.balance - last_balance) as f64) / 1_000_000_000_00.0 != 0.0 {
+                rate = last_gas / (((proof.balance - last_balance) as f64) / 1_000_000_000_00.0)
             }
 
             println!(
-                "\nStake balance: {:.8} ORE, diff: {:.8} ORE gas: {:.8} sol rate: {:.2} ore/sol\nSum balance {:.8} ORE, gas: {:.8} sol sum rate: {:.2} ore/sol",
+                "\nStake balance: {:.8} ORE, diff: {:.8} ORE gas: {:.8} sol rate: {:.2} sol/ore\nSum balance {:.8} ORE, gas: {:.8} sol sum rate: {:.2} sol/ore",
                 amount_u64_to_string(proof.balance),
                 amount_u64_to_string(proof.balance - last_balance),
                 last_gas,
