@@ -377,7 +377,7 @@ impl Miner {
         compute_budget: ComputeBudget,
         skip_confirm: bool,
         difficult: u32,
-    ) -> (Result<Value> ) {
+    ) -> Result<Value> {
         let progress_bar = spinner::new_progress_bar();
         let signer = self.signer();
         let client = self.rpc_client.clone();
