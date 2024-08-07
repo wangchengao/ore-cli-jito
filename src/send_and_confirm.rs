@@ -401,33 +401,10 @@ impl Miner {
             0,
         ));
 
-
-        let extra_fee = self.adjust_fee(difficult);
-
-        final_ixs.push(build_bribe_ix(&signer.pubkey(), extra_fee));
-
-        let mut rng = rand::thread_rng();
-        let random_value = rng.gen::<f64>(); // 生成一个随机的 f64 类型浮点数
-
-        // 格式化字符串，与 Go 中的 fmt.Sprintf 类似
-        let memo_data = format!("plopl666:{:.9}", random_value);
-
-        // 创建一个指令
-        let memo_ix = self.create_memo_instruction(&memo_data);
-        final_ixs.push(memo_ix);
-
-
+        final_ixs.push(build_bribe_ix(&signer.pubkey(),  self.adjust_fee(difficult)));
 
         final_ixs.extend_from_slice(ixs);
 
-        // Build tx
-        let send_cfg = RpcSendTransactionConfig {
-            skip_preflight: true,
-            preflight_commitment: Some(CommitmentLevel::Confirmed),
-            encoding: Some(UiTransactionEncoding::Base64),
-            max_retries: Some(RPC_RETRIES),
-            min_context_slot: None,
-        };
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&signer.pubkey()));
 
         // Sign tx
@@ -508,17 +485,6 @@ impl Miner {
                 }));
             }
         }
-    }
-
-    pub fn create_memo_instruction(&self, memo_data: &str) -> Instruction {
-        let program_id =pubkey!("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"); // 替换为实际的 Memo 程序 ID
-        let data = memo_data.as_bytes().to_vec();  // 将字符串转换为字节向量
-        let account_metas = vec![AccountMeta::new_readonly(
-            self.signer().pubkey(), // 替换为合适的账户 pubkey
-            false,
-        )];
-
-        Instruction::new_with_bytes(program_id, &data, account_metas)
     }
 
     pub fn adjust_fee(&self, difficult: u32) -> u64 {
