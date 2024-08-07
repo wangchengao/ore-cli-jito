@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use colored::*;
-use drillx::{difficulty, equix::{self}, Hash, Solution};
+use drillx::{equix::{self}, Hash, Solution};
 use ore_api::{
     consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Config, Proof},

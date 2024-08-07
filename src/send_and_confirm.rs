@@ -1,4 +1,3 @@
-use std::thread::sleep;
 use std::time::Duration;
 
 use colored::*;
@@ -61,6 +60,14 @@ pub const JITO_RECIPIENTS: [Pubkey; 8] = [
     pubkey!("3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"),
 ];
 
+pub const JITO_ENDPOINTS: [&str; 5] = [
+    "https://mainnet.block-engine.jito.wtf",
+    "https://amsterdam.mainnet.block-engine.jito.wtf",
+    "https://frankfurt.mainnet.block-engine.jito.wtf",
+    "https://ny.mainnet.block-engine.jito.wtf",
+    "https://tokyo.mainnet.block-engine.jito.wtf",
+];
+
 
 // jito submit
 #[derive(Deserialize, Serialize, Debug)]
@@ -103,8 +110,9 @@ async fn get_bundle_statuses(params: Value) -> Result<BundleStatusResponse> {
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+
     let response = client
-        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .post(JITO_ENDPOINTS[rand::thread_rng().gen_range(0..JITO_ENDPOINTS.len())].to_string() + "/api/v1/bundles")
         .headers(headers)
         .json(&json!({
             "jsonrpc": "2.0",
@@ -137,7 +145,7 @@ async fn send_jito_bundle(params: Value) -> Result<BundleSendResponse> {
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
     let response = client
-        .post("https://mainnet.block-engine.jito.wtf:443/api/v1/bundles")
+        .post(JITO_ENDPOINTS[rand::thread_rng().gen_range(0..JITO_ENDPOINTS.len())].to_string() + "/api/v1/bundles")
         .headers(headers)
         .json(&json!({
             "jsonrpc": "2.0",
@@ -369,7 +377,7 @@ impl Miner {
         compute_budget: ComputeBudget,
         skip_confirm: bool,
         difficult: u32,
-    ) -> (Result<Value> ){
+    ) -> (Result<Value> ) {
         let progress_bar = spinner::new_progress_bar();
         let signer = self.signer();
         let client = self.rpc_client.clone();
@@ -388,20 +396,20 @@ impl Miner {
 
         // Set compute units
         let mut final_ixs = vec![];
-        match compute_budget {
-            ComputeBudget::Dynamic => {
-                // TODO simulate
-                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
-            }
-            ComputeBudget::Fixed(cus) => {
-                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
-            }
-        }
+        // match compute_budget {
+        //     ComputeBudget::Dynamic => {
+        //         // TODO simulate
+        //         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
+        //     }
+        //     ComputeBudget::Fixed(cus) => {
+        //         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
+        //     }
+        // }
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             0,
         ));
 
-        final_ixs.push(build_bribe_ix(&signer.pubkey(),  self.adjust_fee(difficult)));
+        final_ixs.push(build_bribe_ix(&signer.pubkey(), self.adjust_fee(difficult)));
 
         final_ixs.extend_from_slice(ixs);
 
@@ -497,7 +505,7 @@ impl Miner {
             }
             println!("change extra fee to {}", extra_fee)
         }
-        return extra_fee
+        return extra_fee;
     }
 }
 
