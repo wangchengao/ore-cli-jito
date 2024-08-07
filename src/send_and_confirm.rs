@@ -37,7 +37,7 @@ const MIN_SOL_BALANCE: f64 = 0.005;
 
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
-const GATEWAY_RETRIES: usize = 20;
+const GATEWAY_RETRIES: usize = 8;
 const CONFIRM_RETRIES: usize = 1;
 
 const CONFIRM_DELAY: u64 = 0;
@@ -464,7 +464,7 @@ impl Miner {
                 }));
             }
         }
-
+        std::thread::sleep(Duration::from_millis(1000));
         loop {
             println!("query bundle bundle_id: {}, attempts: {}", bundle_id, attempts);
 
@@ -483,7 +483,7 @@ impl Miner {
                     println!("{}", err);
                 }
             }
-            std::thread::sleep(Duration::from_millis(2000));
+            std::thread::sleep(Duration::from_millis(4000));
             attempts += 1;
             if attempts > GATEWAY_RETRIES {
                 progress_bar.finish_with_message(format!("{}: Max retries", "ERROR".bold().red()));
