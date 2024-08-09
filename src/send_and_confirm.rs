@@ -107,7 +107,9 @@ struct BundleStatus {
 }
 
 async fn get_bundle_statuses(params: Value) -> Result<BundleStatusResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))  // 设置超时为10秒
+        .build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
@@ -140,7 +142,9 @@ async fn get_bundle_statuses(params: Value) -> Result<BundleStatusResponse> {
 
 
 async fn send_jito_bundle(params: Value) -> Result<BundleSendResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))  // 设置超时为10秒
+        .build()?;
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
